@@ -3,111 +3,71 @@
 #
 # This file is part of LiteX-Boards.
 #
-# Copyright (c) 2015-2020 Florent Kermarrec <florent@enjoy-digital.fr>
-# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2023 Alberto Fahrenkrog
 
 # Build/Use:
-# ./terasic_de0nano.py --uart-name=jtag_uart --build --load
-# litex_term --jtag-config ../prog/openocd_max10_blaster.cfg jtag
+# ./terasic_de0nano.py --build --load
 
+import argparse
 from migen import *
-from migen.genlib.resetsync import AsyncResetSynchronizer
-
-from litex.gen import *
-
-from litex.build.io import DDROutput
-
 from litex_boards.platforms import terasic_de0nano
-
-from litex.soc.cores.clock import CycloneIVPLL
-from litex.soc.integration.soc_core import *
-from litex.soc.integration.builder import *
 from litex.soc.cores.led import LedChaser
-
-from litedram.modules import IS42S16160
-from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 
 # CRG ----------------------------------------------------------------------------------------------
 
-class _CRG(LiteXModule):
-    def __init__(self, platform, sys_clk_freq, sdram_rate="1:1"):
-        self.rst    = Signal()
-        self.cd_sys = ClockDomain()
-        if sdram_rate == "1:2":
-            self.cd_sys2x    = ClockDomain()
-            self.cd_sys2x_ps = ClockDomain()
-        else:
-            self.cd_sys_ps = ClockDomain()
-
+class _CRG(Module):
+    def __init__(self, platform):
+        self.rst    = ResetSignal()
+        self.clock_domains.cd_sys = ClockDomain()
         # # #
 
         # Clk / Rst
-        clk50 = platform.request("clk50")
+        self.comb +=[
+            self.cd_sys.clk.eq(platform.request("clk50", 0)),
+            self.rst.eq(~platform.request("key", 0))
+        ]
 
-        # PLL
-        self.pll = pll = CycloneIVPLL(speedgrade="-6")
-        self.comb += pll.reset.eq(self.rst)
-        pll.register_clkin(clk50, 50e6)
-        pll.create_clkout(self.cd_sys,    sys_clk_freq)
-        if sdram_rate == "1:2":
-            pll.create_clkout(self.cd_sys2x,    2*sys_clk_freq)
-            pll.create_clkout(self.cd_sys2x_ps, 2*sys_clk_freq, phase=180)  # Idealy 90° but needs to be increased.
-        else:
-            pll.create_clkout(self.cd_sys_ps, sys_clk_freq, phase=90)
+# Blinky ------------------------------------------------------------------------------------------
 
-        # SDRAM clock
-        sdram_clk = ClockSignal("sys2x_ps" if sdram_rate == "1:2" else "sys_ps")
-        self.specials += DDROutput(1, 0, platform.request("sdram_clock"), sdram_clk)
-
-# BaseSoC ------------------------------------------------------------------------------------------
-
-class BaseSoC(SoCCore):
-    def __init__(self, sys_clk_freq=50e6, sdram_rate="1:1", with_led_chaser=True, **kwargs):
-        platform = terasic_de0nano.Platform()
+class Blinky(Module):
+    def __init__(self, platform):
 
         # CRG --------------------------------------------------------------------------------------
-        self.crg = _CRG(platform, sys_clk_freq, sdram_rate=sdram_rate)
+        self.crg = _CRG(platform)
 
-        # SoCCore ----------------------------------------------------------------------------------
-        SoCCore.__init__(self, platform, sys_clk_freq, ident="LiteX SoC on DE0-Nano", **kwargs)
+        # Own blinky on Led0
 
-        # SDR SDRAM --------------------------------------------------------------------------------
-        if not self.integrated_main_ram_size:
-            sdrphy_cls = HalfRateGENSDRPHY if sdram_rate == "1:2" else GENSDRPHY
-            self.sdrphy = sdrphy_cls(platform.request("sdram"), sys_clk_freq)
-            self.add_sdram("sdram",
-                phy           = self.sdrphy,
-                module        = IS42S16160(sys_clk_freq, sdram_rate),
-                l2_cache_size = kwargs.get("l2_size", 8192)
-            )
+        # Light Led1 when reset button is pushed
+        self.comb += platform.request("user_led", 1).eq(ResetSignal())
+        
+        # Litex LED Chaser
+        pads = []
+        for idx in range(2, 8):
+            pads.append(platform.request("user_led", idx))
 
-        # Leds -------------------------------------------------------------------------------------
-        if with_led_chaser:
-            self.leds = LedChaser(
-                pads         = platform.request_all("user_led"),
-                sys_clk_freq = sys_clk_freq)
+        pads = Cat(pads)
+
+        self.leds = LedChaser(pads, sys_clk_freq=50e6)
+        self.submodules += self.crg
+        self.submodules += self.leds
 
 # Build --------------------------------------------------------------------------------------------
 
 def main():
-    from litex.build.parser import LiteXArgumentParser
-    parser = LiteXArgumentParser(platform=terasic_de0nano.Platform, description="LiteX SoC on DE0-Nano.")
-    parser.add_target_argument("--sys-clk-freq", default=50e6, type=float, help="System clock frequency.")
-    parser.add_target_argument("--sdram-rate",   default="1:1",            help="SDRAM Rate (1:1 Full Rate or 1:2 Half Rate).")
+
+    parser = argparse.ArgumentParser(description="LiteX Blinky Example.")
+    parser.add_argument("--build", action="store_true")
+    parser.add_argument("--load", action="store_true")
     args = parser.parse_args()
 
-    soc = BaseSoC(
-        sys_clk_freq = args.sys_clk_freq,
-        sdram_rate   = args.sdram_rate,
-        **parser.soc_argdict
-    )
-    builder = Builder(soc, **parser.builder_argdict)
-    if args.build:
-        builder.build(**parser.toolchain_argdict)
+    platform = terasic_de0nano.Platform()
+    blinky = Blinky(platform)
+
+    platform.build(blinky, run=args.build)
 
     if args.load:
-        prog = soc.platform.create_programmer()
-        prog.load_bitstream(builder.get_bitstream_filename(mode="sram"))
+        prog = platform.create_programmer()
+        prog.load_bitstream("./build/top.sof")
 
 if __name__ == "__main__":
     main()
