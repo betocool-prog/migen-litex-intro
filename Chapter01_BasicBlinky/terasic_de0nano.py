@@ -36,6 +36,19 @@ class Blinky(Module):
         self.crg = _CRG(platform)
 
         # Own blinky on Led0
+        # Blinking frequency should be 3 Hz
+        period = int(50e6 / 3 / 2)
+        count = Signal(max=period, reset=period)
+        self.led = Signal()
+
+        self.sync +=[
+            count.eq(count - 1),
+            If(count == 0,
+               self.led.eq(~self.led),
+               count.eq(period)
+            )
+        ]
+        self.comb += platform.request("user_led", 0).eq(self.led)
 
         # Light Led1 when reset button is pushed
         self.comb += platform.request("user_led", 1).eq(ResetSignal())
