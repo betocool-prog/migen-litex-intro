@@ -6,6 +6,8 @@ The purpose of this guide is to help understand a little about Migen, the Python
 
 I'm separating the different sections in chapters, and will try to update them regularly, basically the more I understand something the easier it should be to explain.
 
+Make sure you install Litex and Migen as specified in the quickstart guide, as this is not covered in here.
+
 ## Chapters
 1. [Basic Blinky](./Chapter01_BasicBlinky/)
 
