@@ -43,7 +43,6 @@ If we do not assign a clock domain, the system will use the default clock domain
 
 The differences between the Nano and the Arty board are:
 - Clock frequency and name (clk100).
-- Reset key is not inverted.
 - Arty has a dedicated Reset pin for the FPGA.
 
 ### Blinky
