@@ -7,6 +7,7 @@
 # ./terasic_de0nano.py --build --load
 
 import argparse
+import subprocess
 from migen import *
 from litex_boards.platforms import terasic_de0nano
 from litex.soc.cores.led import LedChaser
@@ -69,6 +70,7 @@ def main():
     parser = argparse.ArgumentParser(description="LiteX Blinky Example.")
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--load", action="store_true")
+    parser.add_argument("--flash", action="store_true")
     args = parser.parse_args()
 
     platform = terasic_de0nano.Platform()
@@ -77,8 +79,16 @@ def main():
     platform.build(blinky, run=args.build)
 
     if args.load:
-        prog = platform.create_programmer()
-        prog.load_bitstream("./build/top.sof")
+        # prog = platform.create_programmer()
+        # prog.load_bitstream("./build/top.sof")
+
+        # Another alternative is to use openFPGALoader
+        command = "openFPGALoader -b de0nano ./build/top.rbf"
+        subprocess.call(command.split(' '))
+
+    if args.flash:
+        command = "openFPGALoader -b de0nano -f ./build/top.rbf"
+        subprocess.call(command.split(' '))
 
 if __name__ == "__main__":
     main()
