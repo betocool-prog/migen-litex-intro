@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
 #
-# This file is part of LiteX-Boards.
-#
 # Copyright (c) 2023 Alberto Fahrenkrog
 
 # Build/Use:
-# ./terasic_de0nano.py --build --load
+# ./digilent_arty.py --build --load
 
 import argparse
 from migen import *

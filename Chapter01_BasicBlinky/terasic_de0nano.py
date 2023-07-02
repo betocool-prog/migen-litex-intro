@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 #
-# This file is part of LiteX-Boards.
-#
 # Copyright (c) 2023 Alberto Fahrenkrog
 
 # Build/Use:
