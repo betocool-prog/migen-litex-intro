@@ -4,11 +4,13 @@
 
 This Blinky and Led Chaser example should give us a decent enough starting point on some Migen and Litex concepts.
 
-Everyone knows the blinky. This one should blink at 3 Hz on a DE0 Nano board (CycloneIV) using Led 0, but you should be able to adapt it fairly simply for any other supported platform
+Everyone knows the blinky. There are two examples, one for the Terasic De0 Nano and one for the Arty A7-100 (which also should work for the A7-35 if you change one parameter on the python file).
 
 The Led Chaser is a Litex Core module, which produces a nice looking Knight Rider style LED sequence from Leds 2 to 8.
 
 Led 1 will light up if the reset button is pushed. The reset button will be assigned to Key 0.
+
+There are minor differences between the Nano and the Arty examples, mostly due to clock frequencies and pin names, otherwise they are equivalent.
 
 ## Components
 
@@ -16,7 +18,8 @@ All in all, this project contains three major components:
 - A CRG (Clock and Reset Generator) module
 - A Blinky module:
     - Simple Led 0 blinky
-    - Led Chaser Leds 2 to 8
+    - Led Chaser Leds 2 to 8 (Nano)
+    - Led Chaser RGB Leds (Arty)
 
 ### CRG
 
@@ -34,9 +37,14 @@ class _CRG(Module):
         ]
 ```
 
-Here we explicitly define a reset signal `ResetSignal()` and a clock domain with `ClockDomain()`. In the combinatorial section we assign `clk50` to be the clock `cd_sys.clk`, and we assign the inverted `key 0` to be our reset signal.
+The code above shows the example for the Nano board. Here we explicitly define a reset signal `ResetSignal()` and a clock domain with `ClockDomain()`. In the combinatorial section we assign `clk50` to be the clock `cd_sys.clk`, and we assign the inverted `key 0` to be our reset signal.
 
 If we do not assign a clock domain, the system will use the default clock domain defined in the platform file for the De0 Nano board. If we do not assign an input to the reset signal, the example will simply not reset.
+
+The differences between the Nano and the Arty board are:
+- Clock frequency and name (clk100).
+- Reset key is not inverted.
+- Arty has a dedicated Reset pin for the FPGA.
 
 ### Blinky
 
@@ -100,3 +108,35 @@ self.chaser = LedChaser(pads, sys_clk_freq)
 
 The `request_all(name)` method requests all `user_led` pins on a board and returns them as a `Cat()` object.
 
+```python
+# Litex LED Chaser
+pads = []
+rgb_led_pins = []
+
+for idx in range(0, 4):
+    rgb_led_pins.append(platform.request("rgb_led", idx))
+
+for idx in range(0, 4):
+    pads.append(rgb_led_pins[idx].r)
+
+for idx in range(0, 4):
+    pads.append(rgb_led_pins[idx].g)
+
+for idx in range(0, 4):
+    pads.append(rgb_led_pins[idx].b)
+
+pads = Cat(pads)
+```
+Note the difference when we request the pins for the Arty board. They are defined differently using subsignals, that can be acessed with the _.name_ notation. This is also important and confusing at the beginning, you can only call _platform.request_ once per name per index. This will fail because once ("rgb_led", 0) is requested, it's not available as a resource anymore:
+```python
+r_pin = platform.request("rgb_led", 0).r
+g_pin = platform.request("rgb_led", 0).g
+b_bin = platform.request("rgb_led", 0).b
+```
+This works:
+```python
+rgb_pins = platform.request("rgb_led", 0)
+r_pin = rgb_pins.r
+g_pin = rgb_pins.g
+b_bin = rgb_pins.b
+```
