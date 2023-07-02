@@ -18,3 +18,4 @@ Still, there's tons of information around to start with, some of them are:
 - [Litex Hub](https://github.com/litex-hub) Some good examples and board packages
 - [Discord Litex Channel](https://discord.gg/PkJwjDbxeG)
 - [Migen Litex Tutorial](https://github.com/fjullien/migen_litex_tutorials) This excellent tutorial covers a lot, it's a very good read!
+- [openFPGALoader](https://trabucayre.github.io/openFPGALoader/guide/first-steps.html) openFPGALoader seems to be a good alternative for loading and flashing boards if openOCD fails.

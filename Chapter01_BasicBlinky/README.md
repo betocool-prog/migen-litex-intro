@@ -140,3 +140,4 @@ r_pin = rgb_pins.r
 g_pin = rgb_pins.g
 b_bin = rgb_pins.b
 ```
+The _main_ program on both modules are quite similar, they generate a blinky, build, load or flash the bitstream to the board. At this stage I went for [openFPGALoader](https://trabucayre.github.io/openFPGALoader/guide/first-steps.html) instead of openOCD because I could not get the flashing working using openOCD.
