@@ -1,3 +1,4 @@
 **/.vscode/
 **/build/
 **/prog/
+**/__pycache__/
