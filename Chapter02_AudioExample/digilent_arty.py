@@ -75,7 +75,7 @@ class Blinky(Module):
         self.comb += platform.request("user_led", 1).eq(self.led_1)
 
 
-        # Light Led1 when reset button is pushed
+        # Light Led2 when reset button is pushed
         self.comb += platform.request("user_led", 2).eq(ResetSignal())
 
 # Top Module
