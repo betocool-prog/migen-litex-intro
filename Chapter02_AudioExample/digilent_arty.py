@@ -34,7 +34,6 @@ class _CRG(Module):
         self.pll = S7PLL(speedgrade=-1)
         self.comb += self.pll.reset.eq(self.rst)
         self.pll.register_clkin(self.cd_sys.clk, 100e6)
-        self.pll.reset.eq(self.rst)
         self.pll.create_clkout(self.cd_i2s, freq=12.288e6)
 
         platform.add_period_constraint(self.cd_i2s.clk, 1e9/12.288e6)
