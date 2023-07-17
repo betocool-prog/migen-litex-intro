@@ -78,6 +78,37 @@ class Blinky(Module):
         # Light Led2 when reset button is pushed
         self.comb += platform.request("user_led", 2).eq(ResetSignal())
 
+class I2S_Tx(Module):
+
+    def __init__(self, platform, cd_i2s):
+
+        # Generate the clock signals from a 12.288 MHz source
+        # MCLK: 12.288 MHz
+        # SCLK: 3.072 MHz
+        # LRCK: 48 KHz
+        i2s_tx = Signal(1, reset=0)
+        i2s_sclk = Signal(1, reset=0)
+        i2s_mclk = Signal(1, reset=0)
+        i2s_sync = Signal(1, reset=0)
+        i2s_clk_div = Signal(max=255, reset=0)
+
+        i2s_tx_pins = platform.request('i2s_tx', 0)
+
+        # They say it's not good practice, but we'll do it anyway here, we'll downcount
+        # the I2S signals from the 12.288 MHz MCLK 
+        self.sync.i2s += [
+            i2s_clk_div.eq(i2s_clk_div + 1),
+        ]
+
+        self.comb += [
+            platform.request('i2s_tx_mclk', 0).eq(cd_i2s.clk),
+            i2s_tx_pins.clk.eq(i2s_clk_div[1]),
+            i2s_tx_pins.sync.eq(i2s_clk_div[7]),
+            i2s_mclk.eq(cd_i2s.clk),
+            i2s_sclk.eq(i2s_clk_div[1]),
+            i2s_sync.eq(i2s_clk_div[7]),
+        ]
+
 # Top Module
 class Top(Module):
     
@@ -89,9 +120,13 @@ class Top(Module):
         # Blinky
         self.blinky = Blinky(platform)
 
+        # I2S Tx
+        self.i2s_tx = I2S_Tx(platform, self.crg.cd_i2s)
+
         # Add the submodule or it won't compile
         self.submodules += self.crg
         self.submodules += self.blinky
+        self.submodules += self.i2s_tx
 
 
 # Build --------------------------------------------------------------------------------------------
@@ -106,6 +141,7 @@ def main():
 
     # The other variant is "a7-35"
     platform = digilent_arty.Platform(variant='a7-100')
+    platform.add_extension(digilent_arty.i2s_pmod_io('pmodd'))
 
     top = Top(platform)
 
