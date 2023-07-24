@@ -89,7 +89,7 @@ class I2S_Tx(Module):
         i2s_tx = Signal(1, reset=0)
         i2s_sclk = Signal(1, reset=0)
         i2s_mclk = Signal(1, reset=0)
-        i2s_sync = Signal(1, reset=0)
+        i2s_lrck = Signal(1, reset=0)
         i2s_clk_div = Signal(max=255, reset=0)
 
         i2s_tx_pins = platform.request('i2s_tx', 0)
@@ -110,38 +110,40 @@ class I2S_Tx(Module):
             i2s_tx_pins.sync.eq(i2s_clk_div[7]),
             i2s_tx_pins.tx.eq(i2s_tx),
             i2s_mclk.eq(cd_i2s.clk),
-            i2s_sclk.eq(~i2s_clk_div[1]),   # According to the reference manual, this should be inverted
-            i2s_sync.eq(i2s_clk_div[7]),
+            i2s_sclk.eq(i2s_clk_div[1]),
+            i2s_lrck.eq(i2s_clk_div[7]),
         ]
 
         # But at least we'll add them as constraints
         platform.add_period_constraint(i2s_mclk, 1e9/12.288e6)
         platform.add_period_constraint(i2s_sclk, 1e9/(12.288e6 / 4))
-        platform.add_period_constraint(i2s_sync, 1e9/48000)
+        platform.add_period_constraint(i2s_lrck, 1e9/48000)
 
         # From here on we'll work on the 100MHz domain checking for I2S pulses
         sclk_delay = Signal(1)
-        sclk_re = Signal(1) # Rising edge
-        sync_delay = Signal(1)
-        sync_re = Signal(1) # Rising edge
-        sync_fe = Signal(1) # Falling edge
+        sclk_fe = Signal(1) # Falling edge
+        lrck_delay = Signal(1)
+        lrck_re = Signal(1) # Rising edge
+        lrck_fe = Signal(1) # Falling edge
 
         self.sync += [
             sclk_delay.eq(i2s_sclk),
-            If((i2s_sclk == 1) & (sclk_delay == 0),
-                sclk_re.eq(1)
+            lrck_delay.eq(i2s_lrck),
+
+            If((i2s_sclk == 0) & (sclk_delay == 1),
+                sclk_fe.eq(1)
             ).Else(
-                sclk_re.eq(0)
+                sclk_fe.eq(0)
             ),
-            If((i2s_sync == 1) & (sync_delay == 0),
-                sync_re.eq(1)
+            If((i2s_lrck == 1) & (lrck_delay == 0),
+                lrck_re.eq(1)
             ).Else(
-                sync_re.eq(0)
+                lrck_re.eq(0)
             ),
-            If((i2s_sync == 0) & (sync_delay == 1),
-                sync_fe.eq(1)
+            If((i2s_lrck == 0) & (lrck_delay == 1),
+                lrck_fe.eq(1)
             ).Else(
-                sync_fe.eq(0)
+                lrck_fe.eq(0)
             ),
         ]
 
@@ -149,30 +151,30 @@ class I2S_Tx(Module):
         r_data = Signal(32, reset=0)
 
         self.sync += [
-            If((sync_re == 1) & (sclk_re == 1),
-               l_data.eq(self.i2s_if.l_data),
-               i2s_tx.eq(0),
-            ),
-            If((sync_fe == 1) & (sclk_re == 1),
-               r_data.eq(self.i2s_if.r_data),
-               i2s_tx.eq(0),
-            ),
-            If((sclk_re == 1) & (i2s_sync == 0),
+            If((sclk_fe == 1) & (i2s_lrck == 0),
                i2s_tx.eq(l_data[31]),
                l_data[1:32].eq(l_data[0:31])
             ),
-            If((sclk_re == 1) & (i2s_sync == 1),
+            If((sclk_fe == 1) & (i2s_lrck == 1),
                i2s_tx.eq(r_data[31]),
                r_data[1:32].eq(r_data[0:31])
+            ),
+            If((lrck_re == 1) & (sclk_fe == 1),
+               r_data.eq(self.i2s_if.r_data),
+               i2s_tx.eq(0),
+            ),
+            If((lrck_fe == 1) & (sclk_fe == 1),
+               l_data.eq(self.i2s_if.l_data),
+               i2s_tx.eq(0),
             )
         ]
 
         self.sync += [
-            If(sync_re == 1,
-                self.i2s_if.l_data.eq(self.i2s_if.l_data + 1)
+            If(lrck_re == 1,
+                self.i2s_if.l_data.eq(self.i2s_if.l_data + 2**16)
             ),
-            If(sync_fe == 1,
-                self.i2s_if.r_data.eq(self.i2s_if.r_data + 1)
+            If(lrck_fe == 1,
+                self.i2s_if.r_data.eq(self.i2s_if.r_data + 2**16)
             )
         ]
 
