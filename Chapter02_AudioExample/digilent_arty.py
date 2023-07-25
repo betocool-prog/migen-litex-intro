@@ -9,9 +9,16 @@
 
 import argparse
 import subprocess
+import numpy as np
 from migen import *
 from litex.soc.cores.clock import *
 from litex_boards.platforms import digilent_arty
+
+i2s_if_layout = [
+            ('l_data', 32, DIR_M_TO_S), 
+            ('r_data', 32, DIR_M_TO_S),
+            ('latch_data', 1, DIR_S_TO_M)
+        ]
 
 
 # CRG ----------------------------------------------------------------------------------------------
@@ -96,7 +103,7 @@ class I2S_Tx(Module):
 
         # I2S Interface
         # Left data word, right data word, ready left, ready right
-        self.i2s_if = Record([('l_data', 32), ('r_data', 32)])
+        self.i2s_if = Record(i2s_if_layout)
 
         # They say it's not good practice, but we'll do it anyway here, we'll downcount
         # the I2S signals from the 12.288 MHz MCLK 
@@ -170,12 +177,50 @@ class I2S_Tx(Module):
         ]
 
         self.sync += [
-            If(lrck_re == 1,
-                self.i2s_if.l_data.eq(self.i2s_if.l_data + 2**16)
-            ),
             If(lrck_fe == 1,
-                self.i2s_if.r_data.eq(self.i2s_if.r_data + 2**16)
+               self.i2s_if.latch_data.eq(1)
             )
+        ]
+
+class Controller(Module): 
+
+    def __init__(self, i2s_tx :I2S_Tx):
+
+        ## Generate 24bit 1 KHz Integer samples @ 48 KHz
+        FS = 48000
+        freq = 1000
+        k = np.linspace(0, 47, num=48)
+
+        samples = np.sin(2 * np.pi * freq * k / FS)
+        samples_int = np.int32(2**24 * samples) << 8
+
+        mem = Memory(32, len(samples_int), init=samples_int)
+
+        self.rport = mem.get_port(write_capable=False, async_read=False, has_re=True, clock_domain='sys')
+        self.specials += mem, self.rport
+        self.addr = Signal(max=48, reset=0)
+        self.r_data = Signal(32)
+        self.l_data = Signal(32)
+
+        
+        self.i2s_tx_if = Record(i2s_if_layout)
+
+        self.comb += self.i2s_tx_if.connect(i2s_tx.i2s_if)
+
+        self.comb += [
+            self.rport.re.eq(self.i2s_tx_if.latch_data),
+            self.rport.adr.eq(self.addr)
+        ]
+
+        self.sync += [
+
+            If(self.i2s_tx_if.latch_data,
+               self.addr.eq(self.addr + 1),
+               If(self.addr == 47,
+                  self.addr.eq(0))
+               ),
+               self.i2s_tx_if.r_data.eq(self.rport.dat_r),
+               self.i2s_tx_if.l_data.eq(self.rport.dat_r)
         ]
 
 
@@ -193,10 +238,14 @@ class Top(Module):
         # I2S Tx
         self.i2s_tx = I2S_Tx(platform, self.crg.cd_i2s)
 
+        # Controller Module
+        self.controller = Controller(self.i2s_tx)
+
         # Add the submodule or it won't compile
         self.submodules += self.crg
         self.submodules += self.blinky
         self.submodules += self.i2s_tx
+        self.submodules += self.controller
 
 
 # Build --------------------------------------------------------------------------------------------
