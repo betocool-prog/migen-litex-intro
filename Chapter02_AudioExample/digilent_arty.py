@@ -192,12 +192,16 @@ class Controller(Module):
         k = np.linspace(0, 47, num=48)
 
         samples = np.sin(2 * np.pi * freq * k / FS)
-        samples_int = np.int32(2**24 * samples) << 8
+        samples_int = np.int32((2**31 - 1) * samples).astype(np.uint32)
 
         mem = Memory(32, len(samples_int), init=samples_int)
+        print(f"Mem Length: {len(samples_int)}")
+        samples_text =  " ".join(f"0x{val:08X}" for val in samples_int)
+        print(samples_text)
 
         self.rport = mem.get_port(write_capable=False, async_read=False, has_re=True, clock_domain='sys')
         self.specials += mem, self.rport
+        
         self.addr = Signal(max=48, reset=0)
         self.r_data = Signal(32)
         self.l_data = Signal(32)
@@ -215,12 +219,14 @@ class Controller(Module):
         self.sync += [
 
             If(self.i2s_tx_if.latch_data,
+               
                self.addr.eq(self.addr + 1),
                If(self.addr == 47,
-                  self.addr.eq(0))
-               ),
+                  self.addr.eq(0)
+                ),
                self.i2s_tx_if.r_data.eq(self.rport.dat_r),
                self.i2s_tx_if.l_data.eq(self.rport.dat_r)
+            )
         ]
 
 
