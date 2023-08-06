@@ -15,8 +15,8 @@ from litex.soc.cores.clock import *
 from litex_boards.platforms import digilent_arty
 
 i2s_if_layout = [
-            ('l_data', 32, DIR_M_TO_S), 
-            ('r_data', 32, DIR_M_TO_S),
+            ('l_data', 16, DIR_M_TO_S), 
+            ('r_data', 16, DIR_M_TO_S),
             ('latch_data', 1, DIR_S_TO_M)
         ]
 
@@ -94,10 +94,12 @@ class I2S_Tx(Module):
         # SCLK: 3.072 MHz
         # LRCK: 48 KHz
         i2s_tx = Signal(1, reset=0)
-        i2s_sclk = Signal(1, reset=0)
+        i2s_sclk = Signal(1, reset=1)
         i2s_mclk = Signal(1, reset=0)
         i2s_lrck = Signal(1, reset=0)
-        i2s_clk_div = Signal(max=255, reset=0)
+
+        i2s_lrck_div = Signal(max=128, reset=1)
+        i2s_sclk_div = Signal(max=24, reset=1)
 
         i2s_tx_pins = platform.request('i2s_tx', 0)
 
@@ -108,17 +110,26 @@ class I2S_Tx(Module):
         # They say it's not good practice, but we'll do it anyway here, we'll downcount
         # the I2S signals from the 12.288 MHz MCLK 
         self.sync.i2s += [
-            i2s_clk_div.eq(i2s_clk_div + 1),
+            i2s_lrck_div.eq(i2s_lrck_div + 1),
+            i2s_sclk_div.eq(i2s_sclk_div + 1),
+
+            If(i2s_lrck_div == 127,
+               i2s_lrck_div.eq(0),
+               i2s_lrck.eq(~i2s_lrck)
+               ),
+
+            If(i2s_sclk_div == 3,
+               i2s_sclk_div.eq(0),
+               i2s_sclk.eq(~i2s_sclk)
+               )
         ]
 
         self.comb += [
             platform.request('i2s_tx_mclk', 0).eq(cd_i2s.clk),
-            i2s_tx_pins.clk.eq(i2s_clk_div[1]),
-            i2s_tx_pins.sync.eq(i2s_clk_div[7]),
+            i2s_tx_pins.clk.eq(i2s_sclk),
+            i2s_tx_pins.sync.eq(i2s_lrck),
             i2s_tx_pins.tx.eq(i2s_tx),
             i2s_mclk.eq(cd_i2s.clk),
-            i2s_sclk.eq(i2s_clk_div[1]),
-            i2s_lrck.eq(i2s_clk_div[7]),
         ]
 
         # But at least we'll add them as constraints
@@ -128,57 +139,35 @@ class I2S_Tx(Module):
 
         # From here on we'll work on the 100MHz domain checking for I2S pulses
         sclk_delay = Signal(1)
-        sclk_fe = Signal(1) # Falling edge
-        lrck_delay = Signal(1)
-        lrck_re = Signal(1) # Rising edge
-        lrck_fe = Signal(1) # Falling edge
+        sclk_re = Signal(1) # Rising edge
+        lrck_prev = Signal(1)
 
         self.sync += [
             sclk_delay.eq(i2s_sclk),
-            lrck_delay.eq(i2s_lrck),
 
-            If((i2s_sclk == 0) & (sclk_delay == 1),
-                sclk_fe.eq(1)
+            If((i2s_sclk == 1) & (sclk_delay == 0),
+                sclk_re.eq(1)
             ).Else(
-                sclk_fe.eq(0)
-            ),
-            If((i2s_lrck == 1) & (lrck_delay == 0),
-                lrck_re.eq(1)
-            ).Else(
-                lrck_re.eq(0)
-            ),
-            If((i2s_lrck == 0) & (lrck_delay == 1),
-                lrck_fe.eq(1)
-            ).Else(
-                lrck_fe.eq(0)
-            ),
-        ]
-
-        l_data = Signal(32, reset=0)
-        r_data = Signal(32, reset=0)
-
-        self.sync += [
-            If((sclk_fe == 1) & (i2s_lrck == 0),
-               i2s_tx.eq(l_data[31]),
-               l_data[1:32].eq(l_data[0:31])
-            ),
-            If((sclk_fe == 1) & (i2s_lrck == 1),
-               i2s_tx.eq(r_data[31]),
-               r_data[1:32].eq(r_data[0:31])
-            ),
-            If((lrck_re == 1) & (sclk_fe == 1),
-               r_data.eq(self.i2s_if.r_data),
-               i2s_tx.eq(0),
-            ),
-            If((lrck_fe == 1) & (sclk_fe == 1),
-               l_data.eq(self.i2s_if.l_data),
-               i2s_tx.eq(0),
+                sclk_re.eq(0)
             )
         ]
 
+        data = Signal(16, reset=0)
+
         self.sync += [
-            If(lrck_fe == 1,
-               self.i2s_if.latch_data.eq(1)
+            If((sclk_re == 1),
+               
+               lrck_prev.eq(i2s_lrck),
+               i2s_tx.eq(data[15]),
+               data[1:15].eq(data[0:14]),
+               self.i2s_if.latch_data.eq(0),
+
+               If((i2s_lrck == 1) & (lrck_prev == 0),
+                  data.eq(self.i2s_if.r_data)),
+
+               If((i2s_lrck == 0) & (lrck_prev == 1),
+                  data.eq(self.i2s_if.l_data),
+                  self.i2s_if.latch_data.eq(1))
             )
         ]
 
@@ -192,20 +181,17 @@ class Controller(Module):
         k = np.linspace(0, 47, num=48)
 
         samples = np.sin(2 * np.pi * freq * k / FS)
-        samples_int = np.int32((2**31 - 1) * samples).astype(np.uint32)
+        samples_int = np.int16((2**15 - 1) * samples).astype(np.uint16)
 
-        mem = Memory(32, len(samples_int), init=samples_int)
+        mem = Memory(16, len(samples_int), init=samples_int)
         print(f"Mem Length: {len(samples_int)}")
-        samples_text =  " ".join(f"0x{val:08X}" for val in samples_int)
+        samples_text =  " ".join(f"0x{val:04X}" for val in samples_int)
         print(samples_text)
 
         self.rport = mem.get_port(write_capable=False, async_read=False, has_re=True, clock_domain='sys')
         self.specials += mem, self.rport
         
         self.addr = Signal(max=48, reset=0)
-        self.r_data = Signal(32)
-        self.l_data = Signal(32)
-
         
         self.i2s_tx_if = Record(i2s_if_layout)
 
