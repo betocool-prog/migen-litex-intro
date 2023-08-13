@@ -94,7 +94,7 @@ class I2S_Tx(Module):
         # SCLK: 3.072 MHz
         # LRCK: 48 KHz
         i2s_tx = Signal(1, reset=0)
-        i2s_sclk = Signal(1, reset=1)
+        i2s_sclk = Signal(1, reset=0)
         i2s_mclk = Signal(1, reset=0)
         i2s_lrck = Signal(1, reset=0)
 
@@ -139,28 +139,29 @@ class I2S_Tx(Module):
 
         # From here on we'll work on the 100MHz domain checking for I2S pulses
         sclk_delay = Signal(1)
-        sclk_re = Signal(1) # Rising edge
+        sclk_fe = Signal(1) # Falling edge
         lrck_prev = Signal(1)
 
         self.sync += [
             sclk_delay.eq(i2s_sclk),
 
-            If((i2s_sclk == 1) & (sclk_delay == 0),
-                sclk_re.eq(1)
+            If((i2s_sclk == 0) & (sclk_delay == 1),
+                sclk_fe.eq(1)
             ).Else(
-                sclk_re.eq(0)
+                sclk_fe.eq(0)
             )
         ]
 
         data = Signal(16, reset=0)
 
         self.sync += [
-            If((sclk_re == 1),
+            self.i2s_if.latch_data.eq(0),
+
+            If((sclk_fe == 1),
                
                lrck_prev.eq(i2s_lrck),
                i2s_tx.eq(data[15]),
-               data[1:15].eq(data[0:14]),
-               self.i2s_if.latch_data.eq(0),
+               data[1:].eq(data[0:15]),
 
                If((i2s_lrck == 1) & (lrck_prev == 0),
                   data.eq(self.i2s_if.r_data)),
