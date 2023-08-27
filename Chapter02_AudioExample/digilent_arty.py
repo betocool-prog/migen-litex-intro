@@ -43,7 +43,9 @@ class _CRG(Module):
         self.pll.register_clkin(self.cd_sys.clk, 100e6)
         self.pll.create_clkout(self.cd_i2s, freq=12.288e6)
 
+        # platform.add_period_constraint(self.cd_sys.clk, 1e9/100e6)
         platform.add_period_constraint(self.cd_i2s.clk, 1e9/12.288e6)
+        platform.add_false_path_constraints(self.cd_sys.clk, self.cd_i2s.clk)
 
         self.submodules += self.pll
 
@@ -131,11 +133,6 @@ class I2S_Tx(Module):
             i2s_tx_pins.tx.eq(i2s_tx),
             i2s_mclk.eq(cd_i2s.clk),
         ]
-
-        # But at least we'll add them as constraints
-        platform.add_period_constraint(i2s_mclk, 1e9/12.288e6)
-        platform.add_period_constraint(i2s_sclk, 1e9/(12.288e6 / 4))
-        platform.add_period_constraint(i2s_lrck, 1e9/48000)
 
         # From here on we'll work on the 100MHz domain checking for I2S pulses
         sclk_delay = Signal(1)
